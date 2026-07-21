@@ -1,5 +1,4 @@
 # Little Rpg
-#### Video Demo: <[(https://youtu.be/lFvlwEB6pIA)]>
 #### Description:
 
 Little RPG is a text-based role-playing game developed in Python as my final project for Harvard’s CS50 course. The goal of the game is to provide an accessible and engaging experience that can be played directly in the terminal, focusing on strategic decision-making and simple, enjoyable gameplay mechanics. This project reflects my interest in game design as well as my understanding of programming fundamentals covered throughout the course.
