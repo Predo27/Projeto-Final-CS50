@@ -1,0 +1,386 @@
+import random
+import time
+
+# Utilities
+def slow_print(text, delay=0.03):
+    for char in text:
+        print(char, end="", flush=True)
+        time.sleep(delay)
+    print()
+
+def ask_choice(prompt, options, default=None):
+    
+    # Normalize valid keys
+    if isinstance(options, dict):
+        valid = set(options.keys())
+    else:
+        valid = set(str(o) for o in options)
+
+    while True:
+        choice = input(prompt).strip()
+        if choice == "" and default is not None:
+            return default
+        if choice in valid:
+            return choice
+        slow_print("Invalid option. Try again.")
+
+def ask_yes_no(prompt):
+    while True:
+        choice = input(prompt + " (y/n): ").lower().strip()
+        if choice in ("y", "yes"):
+            return True
+        if choice in ("n", "no"):
+            return False
+        slow_print("Digite y (yes) ou n (no).")
+
+# Classes
+class Player:
+    def __init__(self, name, role):
+        self.name = name
+        self.role = role
+
+        if role == "Knight":
+            self.max_hp = 120
+            self.hp = 120
+            self.attack = 12
+            self.special_name = "Shield Bash"
+            self.class_name = "Bleeding Strike"
+
+        elif role == "Mage":
+            self.max_hp = 80
+            self.hp = 80
+            self.attack = 18
+            self.special_name = "Arcane Fireball"
+            self.class_name = "Lightning Strike"
+
+        elif role == "Monk":
+            self.max_hp = 100
+            self.hp = 100
+            self.attack = 14
+            self.special_name = "Fury Palm"
+            self.class_name = "Living Heal"
+
+        else:
+            # fallback
+            self.max_hp = 100
+            self.hp = 100
+            self.attack = 10
+            self.special_name = "Special"
+            self.class_name = "Class"
+
+        self.level = 1
+        self.xp = 0
+
+        # Cooldowns: number of turns remaining
+        self.cooldowns = {"Special": 0, "Class": 0}
+
+        # Effects (timers)
+        self.heal_turns = 0
+        self.invulnerable_turns = 0
+        self.reflect_turns = 0
+
+    def basic_attack(self, enemy):
+        damage = random.randint(max(0, self.attack - 2), self.attack + 2)
+        enemy.hp -= damage
+        return damage
+
+    def special_attack(self, enemy):
+        if self.cooldowns["Special"] > 0:
+            return None
+
+        if self.role == "Knight":
+            damage = int(self.attack * 2)
+        elif self.role == "Mage":
+            damage = int(self.attack * 3)
+        elif self.role == "Monk":
+            damage = int(self.attack * 2)
+        else:
+            damage = int(self.attack * 2)
+
+        enemy.hp -= damage
+        self.cooldowns["Special"] = 3
+        return damage
+
+    def class_ability(self, enemy):
+        if self.cooldowns["Class"] > 0:
+            return None
+
+        if self.role == "Knight":
+            damage = int(self.attack * 2.5)
+            enemy.hp -= damage
+            enemy.bleed_turns = 3
+            enemy.bleed_damage = 6
+            self.cooldowns["Class"] = 6
+            return ("damage", damage)
+
+        elif self.role == "Mage":
+            damage = self.attack
+            enemy.hp -= damage
+            enemy.stunned = 4
+            self.cooldowns["Class"] = 6
+            return ("damage", damage)
+
+        elif self.role == "Monk":
+            self.heal_turns = 2
+            self.invulnerable_turns = 2
+            self.reflect_turns = 2
+            self.cooldowns["Class"] = 4
+            return ("buff", "Living Heal")
+
+        return None
+
+    def gain_xp(self, amount):
+        slow_print(f"You gained {amount} XP!")
+        self.xp += amount
+        xp_needed = int(self.level * 17)
+        while self.xp >= xp_needed:
+            self.xp -= xp_needed
+            self.level_up()
+            xp_needed = int(self.level * 17)
+
+    def level_up(self):
+        self.level += 1
+        slow_print(f"\n*** LEVEL UP! Now Level {self.level}! ***")
+        hp_increase = 15 + (self.level * 5)
+        atk_increase = 2 + (self.level * 1)
+        slow_print("\nChoose a stat to improve:")
+        slow_print(f"1 - Increase Maximum HP (+{hp_increase} HP)")
+        slow_print(f"2 - Increase Attack Power (+{atk_increase} Attack)")
+        choice = ask_choice("> ", ["1", "2"], default="1")
+        if choice == "1":
+            self.max_hp += hp_increase
+            self.hp = self.max_hp
+            slow_print(f"Your maximum HP increased by {hp_increase}!")
+        else:
+            self.attack += atk_increase
+            slow_print(f"Your attack increased by {atk_increase}!")
+
+    def show_stats(self):
+        print("\n────────────────────────────────────")
+        print(f" Player: {self.name} | Class: {self.role}")
+        print("────────────────────────────────────")
+        print(f" HP: {self.hp}/{self.max_hp}")
+        print(f" Attack: {self.attack}")
+        print(f" Level: {self.level}")
+        print(f" XP: {self.xp}/{self.level * 17}")
+        print("────────────────────────────────────\n")
+
+
+class Enemy:
+    def __init__(self, name, hp, attack, xp_reward, is_boss=False):
+        self.name = name
+        self.hp = hp
+        self.attack = attack
+        self.xp_reward = xp_reward
+        self.stunned = 0
+        self.is_boss = is_boss
+        self.bleed_turns = 0
+        self.bleed_damage = 0
+
+    def basic_attack(self, player):
+        if self.stunned > 0:
+            self.stunned -= 1
+            slow_print(f"{self.name} is stunned and cannot act!")
+            return 0
+
+        damage = self.attack
+
+        if player.invulnerable_turns > 0:
+            reflect = int(damage / 2)
+            if reflect > 0:
+                self.hp -= reflect
+                slow_print("Your Living Heal absorbed all damage!")
+                slow_print(f"You reflected {reflect} damage back!")
+            return 0
+
+        player.hp -= damage
+        return damage
+
+# Battle system
+def battle(player, enemy):
+    slow_print(f"\nA {enemy.name} appears!")
+
+    while player.hp > 0 and enemy.hp > 0:
+        print("\n────────────────────────────────────")
+        print(f"{player.name}: {player.hp}/{player.max_hp} HP")
+        print(f"{enemy.name}: {enemy.hp} HP")
+        print("────────────────────────────────────")
+
+        special_cd = player.cooldowns["Special"]
+        class_cd = player.cooldowns["Class"]
+
+        print("\nYour turn:")
+        print("1 - Basic Attack")
+        print(f"2 - {player.special_name} ({'Cooldown: ' + str(special_cd) if special_cd > 0 else 'Ready'})")
+        print(f"3 - {player.class_name} ({'Cooldown: ' + str(class_cd) if class_cd > 0 else 'Ready'})")
+
+        choice = input("> ").strip()
+
+        if choice == "1":
+            dmg = player.basic_attack(enemy)
+            slow_print(f"You dealt {dmg} damage.")
+
+        elif choice == "2":
+            result = player.special_attack(enemy)
+            if result is None:
+                slow_print("Ability on cooldown!")
+                continue
+            slow_print(f"You used {player.special_name} for {result} damage!")
+
+        elif choice == "3":
+            result = player.class_ability(enemy)
+            if result is None:
+                slow_print("Ability on cooldown!")
+                continue
+            if result[0] == "damage":
+                slow_print(f"You used {player.class_name} for {result[1]} damage!")
+            else:
+                slow_print(f"{player.class_name} activated!")
+
+        else:
+            slow_print("Invalid option. You lose your turn.")
+
+        if enemy.hp <= 0:
+            slow_print(f"You defeated the {enemy.name}!")
+            return True
+
+        # bleed before enemy act
+        if enemy.bleed_turns > 0:
+            enemy.hp -= enemy.bleed_damage
+            enemy.bleed_turns -= 1
+            slow_print(f"{enemy.name} takes {enemy.bleed_damage} bleed damage!")
+            if enemy.hp <= 0:
+                slow_print(f"{enemy.name} died from bleeding!")
+                return True
+
+        damage = enemy.basic_attack(player)
+        if damage > 0:
+            slow_print(f"The {enemy.name} attacked you for {damage} damage!")
+
+        # Monk heal-over-time after attack
+        if player.heal_turns > 0:
+            player.hp = min(player.max_hp, player.hp + 10)
+            player.heal_turns -= 1
+            slow_print("You heal 10 HP from Living Heal.")
+
+        # Reduce cooldowns & effect timers
+        for k in player.cooldowns:
+            if player.cooldowns[k] > 0:
+                player.cooldowns[k] -= 1
+
+        if player.invulnerable_turns > 0:
+            player.invulnerable_turns -= 1
+        if player.reflect_turns > 0:
+            player.reflect_turns -= 1
+
+    return False
+
+# Game flux
+def game():
+    slow_print("Welcome to the Adventure!")
+
+    name = input("Enter your name: ")
+
+    slow_print("Choose your class:")
+    print("1 - Knight")
+    print("2 - Mage")
+    print("3 - Monk")
+
+    roles = {"1": "Knight", "2": "Mage", "3": "Monk"}
+    role_choice = ask_choice("> ", roles, default="1")
+    role = roles.get(role_choice, "Knight")
+
+    player = Player(name, role)
+    player.show_stats()
+
+    goblins = [
+        {"name": "Goblin", "hp": 20, "attack_range": (2, 5), "xp": 15},
+        {"name": "Goblin Scout", "hp": 18, "attack_range": (1, 4), "xp": 12},
+        {"name": "Goblin Brute", "hp": 28, "attack_range": (3, 7), "xp": 22}
+    ]
+
+    skeletons = [
+        {"name": "Skeleton", "hp": 25, "attack_range": (3, 6), "xp": 20},
+        {"name": "Skeleton Archer", "hp": 22, "attack_range": (4, 8), "xp": 25},
+        {"name": "Skeleton Warrior", "hp": 30, "attack_range": (5, 10), "xp": 35}
+    ]
+
+    trolls = [
+        {"name": "Troll", "hp": 35, "attack_range": (4, 10), "xp": 40},
+        {"name": "Troll Brute", "hp": 45, "attack_range": (6, 12), "xp": 55},
+        {"name": "Troll Berserker", "hp": 40, "attack_range": (8, 16), "xp": 65}
+    ]
+
+    all_enemies = goblins + skeletons + trolls
+    selected_enemies = random.sample(all_enemies, 5)
+
+    slow_print("\nYour adventure begins... prepare for your battles!")
+    battle_number = 1
+
+    for enemy_data in selected_enemies:
+        scaled_hp = int(enemy_data["hp"] + battle_number * 8)
+        scaled_atk = random.randint(*enemy_data["attack_range"]) + battle_number * 2
+
+        enemy = Enemy(enemy_data["name"], scaled_hp, scaled_atk, enemy_data["xp"])
+
+        slow_print(f"\nEnemy difficulty increased! (Battle {battle_number})")
+
+        if not battle(player, enemy):
+            slow_print("\nYou were defeated... GAME OVER!")
+            return
+
+        xp_gain = 20 + battle_number * 5
+        player.gain_xp(xp_gain)
+
+        battle_number += 1
+
+    # Final boss
+    bosses = [
+        Enemy("Goblin Shaman", 150, 18, 80, True),
+        Enemy("Skeleton King", 170, 20, 90, True),
+        Enemy("Troll Leader", 200, 22, 110, True),
+    ]
+
+    slow_print("\nThe final boss approaches...")
+
+    main_boss = random.choice(bosses)
+    bosses.remove(main_boss)
+
+    slow_print(f"\nTHE FINAL BATTLE BEGINS! Your opponent is: {main_boss.name}")
+
+    main_boss.hp += battle_number * 16
+    main_boss.attack += battle_number * 4
+
+    if not battle(player, main_boss):
+        slow_print("\nYou were defeated by the final boss... GAME OVER!")
+        return
+
+    boss_xp = 80 + battle_number * 10
+    slow_print(f"\nYou gained {boss_xp} XP from defeating the boss!")
+    player.gain_xp(boss_xp)
+
+    # Optional bosses
+    while bosses:
+        if not ask_yes_no("\nWould you like to challenge one of the remaining bosses?"):
+            slow_print("\nYou chose to end your journey here. A wise decision, hero.")
+            break
+
+        next_boss = bosses.pop(0)
+        next_boss.hp += battle_number * 20
+        next_boss.attack += battle_number * 5
+
+        slow_print(f"\nA NEW BOSS CHALLENGES YOU: {next_boss.name} (HP: {next_boss.hp}, ATK: {next_boss.attack})")
+
+        if not battle(player, next_boss):
+            slow_print("\nYou were defeated during an optional boss fight... but your legend lives on!")
+            return
+
+        bonus_xp = 100 + battle_number * 12
+        total_xp = next_boss.xp_reward + bonus_xp
+
+        slow_print(f"\nYou defeated {next_boss.name}!")
+        slow_print(f"You gained {total_xp} XP!")
+        player.gain_xp(total_xp)
+
+if __name__ == "__main__":
+    game()
